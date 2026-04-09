@@ -1,7 +1,7 @@
 [project]
 name = "iniyas-travels-quotation-app"
 version = "0.1.0"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.12,<3.15"
 dependencies = [
   "streamlit==1.56.0",
   "reportlab==4.4.10",
