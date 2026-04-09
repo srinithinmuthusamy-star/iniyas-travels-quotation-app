@@ -1,3 +1,6 @@
+[tool.poetry]
+package-mode = false
+
 [project]
 name = "iniyas-travels-quotation-app"
 version = "0.1.0"
@@ -7,3 +10,4 @@ dependencies = [
   "reportlab==4.4.10",
   "pillow==10.4.0",
 ]
+
