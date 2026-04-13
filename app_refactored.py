@@ -1,6 +1,7 @@
 from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
+import json
 
 import streamlit as st
 from reportlab.lib import colors
@@ -25,15 +26,36 @@ ACCENT_COLOR = colors.HexColor("#0B6E4F")
 TEXT_COLOR = colors.HexColor("#1B1F23")
 MUTED_TEXT = colors.HexColor("#5B6575")
 
+COUNTER_FILE = Path(__file__).with_name("bill_counter.json")
+
 
 def format_currency(value: float) -> str:
     return f"Rs. {value:,.2f}"
 
 
-def generate_document_number(doc_type: str) -> str:
+def get_next_bill_number() -> str:
+    counter_data = {"last_bill_no": 0}
+
+    if COUNTER_FILE.exists():
+        try:
+            counter_data = json.loads(COUNTER_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            counter_data = {"last_bill_no": 0}
+
+    next_no = int(counter_data.get("last_bill_no", 0)) + 1
+    counter_data["last_bill_no"] = next_no
+
+    try:
+        COUNTER_FILE.write_text(json.dumps(counter_data), encoding="utf-8")
+    except Exception:
+        pass
+
+    return f"BILL-{next_no:04d}"
+
+
+def generate_quotation_number() -> str:
     now = datetime.now()
-    prefix = "QT" if doc_type == "Quotation" else "BILL"
-    return f"{prefix}-{now.strftime('%Y%m%d-%H%M%S')}"
+    return f"QT-{now.strftime('%Y%m%d-%H%M%S')}"
 
 
 def draw_section_title(pdf: canvas.Canvas, x: float, y: float, width: float, title: str) -> float:
@@ -150,7 +172,6 @@ def draw_paragraph_section(
     style.fontSize = 8.6
     style.leading = 12
     style.textColor = TEXT_COLOR
-    style.spaceAfter = 0
 
     title_bottom = draw_section_title(pdf, x, y, width, title)
     paragraphs = [Paragraph(f"{i}. {line}", style) for i, line in enumerate(lines, start=1)]
@@ -248,7 +269,7 @@ def draw_header(pdf: canvas.Canvas, doc_type: str, doc_number: str, doc_date: da
     pdf.setFillColor(ACCENT_COLOR)
     pdf.drawRightString(right_edge, y - 24, doc_type.upper())
 
-    label = "Quotation No" if doc_type == "Quotation" else "Bill No"
+    label = "Quotation No" if doc_type == "Quotation" else "Invoice No"
     pdf.setFont("Helvetica", 9)
     pdf.setFillColor(TEXT_COLOR)
     pdf.drawRightString(right_edge, y - 42, f"{label}: {doc_number}")
@@ -286,6 +307,21 @@ def draw_header(pdf: canvas.Canvas, doc_type: str, doc_number: str, doc_date: da
     return y - header_height - 12
 
 
+def draw_footer(pdf: canvas.Canvas, doc_type: str, total_amount: float) -> None:
+    footer_y = 18 * mm
+    pdf.setStrokeColor(colors.HexColor("#D8DFEA"))
+    pdf.line(LEFT_MARGIN, footer_y + 12, PAGE_WIDTH - RIGHT_MARGIN, footer_y + 12)
+
+    pdf.setFont("Helvetica", 8)
+    pdf.setFillColor(MUTED_TEXT)
+
+    if doc_type == "Bill":
+        pdf.drawString(LEFT_MARGIN, footer_y, f"Total Invoice Value: {format_currency(total_amount)}")
+        pdf.drawRightString(PAGE_WIDTH - RIGHT_MARGIN, footer_y, "This is a computer-generated invoice.")
+    else:
+        pdf.drawString(LEFT_MARGIN, footer_y, "Thank you for choosing Iniyas Travels.")
+
+
 def build_document_pdf(payload: dict) -> bytes:
     buffer = BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=A4)
@@ -314,14 +350,8 @@ def build_document_pdf(payload: dict) -> bytes:
 
     current_y = draw_table_section(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, "Charges", payload["charges_table"])
     current_y = draw_paragraph_section(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, "Terms & Conditions", payload["terms"])
-    current_y = draw_payment_and_signature(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, payload["payment_rows"])
-
-    footer_y = max(current_y - 4, 18 * mm)
-    pdf.setStrokeColor(colors.HexColor("#D8DFEA"))
-    pdf.line(LEFT_MARGIN, footer_y, PAGE_WIDTH - RIGHT_MARGIN, footer_y)
-    pdf.setFont("Helvetica", 8)
-    pdf.setFillColor(MUTED_TEXT)
-    pdf.drawString(LEFT_MARGIN, footer_y - 12, "Thank you for choosing Iniyas Travels.")
+    draw_payment_and_signature(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, payload["payment_rows"])
+    draw_footer(pdf, payload["doc_type"], payload["total_amount"])
 
     pdf.save()
     buffer.seek(0)
@@ -329,25 +359,37 @@ def build_document_pdf(payload: dict) -> bytes:
 
 
 st.set_page_config(page_title="Iniyas Travels Billing", layout="wide")
-st.title("Iniyas Travels Quotation / Bill Generator")
-st.caption("Generate professional quotation and bill PDFs with auto document number and serial-numbered item table.")
+st.title("Iniyas Travels Quotation / Invoice Generator")
 
 default_logo = Path(__file__).with_name("logo.jpeg")
+
+doc_type = st.selectbox("Document Type", ["Quotation", "Bill"], index=0)
+
+if "saved_bill_no" not in st.session_state:
+    st.session_state.saved_bill_no = get_next_bill_number() if doc_type == "Bill" else generate_quotation_number()
+
+if "last_doc_type" not in st.session_state:
+    st.session_state.last_doc_type = doc_type
+
+if st.session_state.last_doc_type != doc_type:
+    if doc_type == "Bill":
+        st.session_state.saved_bill_no = get_next_bill_number()
+    else:
+        st.session_state.saved_bill_no = generate_quotation_number()
+    st.session_state.last_doc_type = doc_type
 
 with st.form("billing_form"):
     left_col, right_col = st.columns(2)
 
     with left_col:
         st.subheader("Document")
-        doc_type = st.selectbox("Document Type", ["Quotation", "Bill"])
-        auto_number = generate_document_number(doc_type)
-        doc_number = st.text_input("Document Number", value=auto_number)
+        doc_number = st.text_input("Document Number", value=st.session_state.saved_bill_no)
         doc_date = st.date_input("Document Date", value=date.today())
 
         st.subheader("Customer")
-        customer_name = st.text_input("Customer Name", value="Mr. Arun Kumar")
-        contact = st.text_input("Contact Number", value="+91 98765 43210")
-        customer_email = st.text_input("Customer Email", value="arun@example.com")
+        customer_name = st.text_input("Customer Name", value="Mr. Prabu Devan")
+        contact = st.text_input("Contact Number", value="+91 86677 39634")
+        customer_email = st.text_input("Customer Email", value="prabu@example.com")
         prepared_by = st.text_input("Prepared By", value="Iniyas Travels")
 
         st.subheader("Trip")
@@ -414,7 +456,7 @@ if submitted:
 
         payload = {
             "doc_type": doc_type,
-            "doc_number": doc_number.strip() or generate_document_number(doc_type),
+            "doc_number": doc_number.strip() or st.session_state.saved_bill_no,
             "doc_date": doc_date,
             "logo_path": logo_path.strip(),
             "customer_name": customer_name.strip() or "-",
@@ -436,10 +478,11 @@ if submitted:
                 ("IFSC", ifsc.strip() or "-"),
                 ("UPI", upi_id.strip() or "-"),
             ],
+            "total_amount": total_amount,
         }
 
         pdf_bytes = build_document_pdf(payload)
-        file_prefix = "Quotation" if doc_type == "Quotation" else "Bill"
+        file_prefix = "Quotation" if doc_type == "Quotation" else "Invoice"
 
         st.success(f"{doc_type} PDF generated successfully.")
         st.download_button(
@@ -449,3 +492,9 @@ if submitted:
             mime="application/pdf",
             use_container_width=True,
         )
+
+        if doc_type == "Bill":
+            st.session_state.saved_bill_no = get_next_bill_number()
+        else:
+            st.session_state.saved_bill_no = generate_quotation_number()
+
