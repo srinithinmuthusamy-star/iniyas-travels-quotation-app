@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date
 from io import BytesIO
 from pathlib import Path
 import json
@@ -26,36 +26,43 @@ ACCENT_COLOR = colors.HexColor("#0B6E4F")
 TEXT_COLOR = colors.HexColor("#1B1F23")
 MUTED_TEXT = colors.HexColor("#5B6575")
 
-COUNTER_FILE = Path(__file__).with_name("bill_counter.json")
+COUNTER_FILE = Path(__file__).with_name("document_counters.json")
 
 
 def format_currency(value: float) -> str:
     return f"Rs. {value:,.2f}"
 
 
-def get_next_bill_number() -> str:
-    counter_data = {"last_bill_no": 0}
-
+def load_counters() -> dict:
+    default_data = {"quotation": 0, "bill": 0}
     if COUNTER_FILE.exists():
         try:
-            counter_data = json.loads(COUNTER_FILE.read_text(encoding="utf-8"))
+            data = json.loads(COUNTER_FILE.read_text(encoding="utf-8"))
+            return {
+                "quotation": int(data.get("quotation", 0)),
+                "bill": int(data.get("bill", 0)),
+            }
         except Exception:
-            counter_data = {"last_bill_no": 0}
+            return default_data
+    return default_data
 
-    next_no = int(counter_data.get("last_bill_no", 0)) + 1
-    counter_data["last_bill_no"] = next_no
 
+def save_counters(data: dict) -> None:
     try:
-        COUNTER_FILE.write_text(json.dumps(counter_data), encoding="utf-8")
+        COUNTER_FILE.write_text(json.dumps(data), encoding="utf-8")
     except Exception:
         pass
 
-    return f"BILL-{next_no:04d}"
 
-
-def generate_quotation_number() -> str:
-    now = datetime.now()
-    return f"QT-{now.strftime('%Y%m%d-%H%M%S')}"
+def get_next_document_number(doc_type: str) -> str:
+    counters = load_counters()
+    if doc_type == "Quotation":
+        counters["quotation"] += 1
+        save_counters(counters)
+        return f"QT-{counters['quotation']:04d}"
+    counters["bill"] += 1
+    save_counters(counters)
+    return f"INV-{counters['bill']:04d}"
 
 
 def draw_section_title(pdf: canvas.Canvas, x: float, y: float, width: float, title: str) -> float:
@@ -349,7 +356,17 @@ def build_document_pdf(payload: dict) -> bytes:
     current_y = draw_key_value_grid(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, "Trip Details", trip_rows)
 
     current_y = draw_table_section(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, "Charges", payload["charges_table"])
-    current_y = draw_paragraph_section(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, "Terms & Conditions", payload["terms"])
+
+    if payload["doc_type"] == "Quotation" and payload["terms"]:
+        current_y = draw_paragraph_section(
+            pdf,
+            LEFT_MARGIN,
+            current_y,
+            CONTENT_WIDTH,
+            "Terms & Conditions",
+            payload["terms"],
+        )
+
     draw_payment_and_signature(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, payload["payment_rows"])
     draw_footer(pdf, payload["doc_type"], payload["total_amount"])
 
@@ -363,19 +380,16 @@ st.title("Iniyas Travels Quotation / Invoice Generator")
 
 default_logo = Path(__file__).with_name("logo.jpeg")
 
-doc_type = st.selectbox("Document Type", ["Quotation", "Bill"], index=0)
+doc_type = st.selectbox("Document Type", ["Quotation", "Bill"])
 
-if "saved_bill_no" not in st.session_state:
-    st.session_state.saved_bill_no = get_next_bill_number() if doc_type == "Bill" else generate_quotation_number()
+if "current_doc_number" not in st.session_state:
+    st.session_state.current_doc_number = get_next_document_number(doc_type)
 
 if "last_doc_type" not in st.session_state:
     st.session_state.last_doc_type = doc_type
 
 if st.session_state.last_doc_type != doc_type:
-    if doc_type == "Bill":
-        st.session_state.saved_bill_no = get_next_bill_number()
-    else:
-        st.session_state.saved_bill_no = generate_quotation_number()
+    st.session_state.current_doc_number = get_next_document_number(doc_type)
     st.session_state.last_doc_type = doc_type
 
 with st.form("billing_form"):
@@ -383,13 +397,13 @@ with st.form("billing_form"):
 
     with left_col:
         st.subheader("Document")
-        doc_number = st.text_input("Document Number", value=st.session_state.saved_bill_no)
+        doc_number = st.text_input("Document Number", value=st.session_state.current_doc_number)
         doc_date = st.date_input("Document Date", value=date.today())
 
         st.subheader("Customer")
-        customer_name = st.text_input("Customer Name", value="Mr. Prabu Devan")
-        contact = st.text_input("Contact Number", value="+91 86677 39634")
-        customer_email = st.text_input("Customer Email", value="prabu@example.com")
+        customer_name = st.text_input("Customer Name", value="Mr. Arun Kumar")
+        contact = st.text_input("Contact Number", value="+91 98765 43210")
+        customer_email = st.text_input("Customer Email", value="arun@example.com")
         prepared_by = st.text_input("Prepared By", value="Iniyas Travels")
 
         st.subheader("Trip")
@@ -409,6 +423,11 @@ with st.form("billing_form"):
         driver_bata = st.number_input("Driver Bata", min_value=0.0, value=1600.0, step=100.0)
         toll_charges = st.number_input("Toll Charges", min_value=0.0, value=600.0, step=100.0)
         hill_charges = st.number_input("Hill Charges", min_value=0.0, value=1000.0, step=100.0)
+        parking_charges = st.number_input("Parking", min_value=0.0, value=0.0, step=100.0)
+        state_taxi = st.number_input("State Taxi", min_value=0.0, value=0.0, step=100.0)
+        hour_charge = st.number_input("Hour Charge", min_value=0.0, value=0.0, step=100.0)
+        extra_hours = st.number_input("Extra Hours", min_value=0.0, value=0.0, step=100.0)
+        extra_km = st.number_input("Extra KM", min_value=0.0, value=0.0, step=100.0)
         permit_charges = st.number_input("Permit / Parking Charges", min_value=0.0, value=0.0, step=100.0)
 
         st.subheader("Payment")
@@ -418,17 +437,20 @@ with st.form("billing_form"):
         ifsc = st.text_input("IFSC Code", value="SBIN0012786")
         upi_id = st.text_input("UPI ID", value="8667739634@upi")
 
-    terms_text = st.text_area(
-        "Terms & Conditions",
-        value=(
-            "Toll, parking, permit, and interstate taxes are extra unless specifically mentioned.\n"
-            "Driver bata is included only if shown in the document.\n"
-            "Any extra usage beyond agreed itinerary will be charged additionally.\n"
-            "Advance payment is required to confirm the booking.\n"
-            "Rates are subject to change during peak dates if not confirmed in advance."
-        ),
-        height=150,
-    )
+    terms = []
+    if doc_type == "Quotation":
+        terms_text = st.text_area(
+            "Terms & Conditions",
+            value=(
+                "Toll, parking, permit, and interstate taxes are extra unless specifically mentioned.\n"
+                "Driver bata is included only if shown in the document.\n"
+                "Any extra usage beyond agreed itinerary will be charged additionally.\n"
+                "Advance payment is required to confirm the booking.\n"
+                "Rates are subject to change during peak dates if not confirmed in advance."
+            ),
+            height=150,
+        )
+        terms = [line.strip() for line in terms_text.splitlines() if line.strip()]
 
     submitted = st.form_submit_button("Generate PDF", use_container_width=True)
 
@@ -443,6 +465,11 @@ if submitted:
             ("Driver Bata", driver_bata),
             ("Toll Charges", toll_charges),
             ("Hill Charges", hill_charges),
+            ("Parking", parking_charges),
+            ("State Taxi", state_taxi),
+            ("Hour Charge", hour_charge),
+            ("Extra Hours", extra_hours),
+            ("Extra KM", extra_km),
             ("Permit / Parking Charges", permit_charges),
         ]
 
@@ -456,7 +483,7 @@ if submitted:
 
         payload = {
             "doc_type": doc_type,
-            "doc_number": doc_number.strip() or st.session_state.saved_bill_no,
+            "doc_number": doc_number.strip() or st.session_state.current_doc_number,
             "doc_date": doc_date,
             "logo_path": logo_path.strip(),
             "customer_name": customer_name.strip() or "-",
@@ -470,7 +497,7 @@ if submitted:
             "vehicle": vehicle.strip() or "-",
             "trip_type": trip_type,
             "charges_table": charge_rows,
-            "terms": [line.strip() for line in terms_text.splitlines() if line.strip()],
+            "terms": terms,
             "payment_rows": [
                 ("Bank", bank_name.strip() or "-"),
                 ("Account Name", account_name.strip() or "-"),
@@ -493,8 +520,5 @@ if submitted:
             use_container_width=True,
         )
 
-        if doc_type == "Bill":
-            st.session_state.saved_bill_no = get_next_bill_number()
-        else:
-            st.session_state.saved_bill_no = generate_quotation_number()
+        st.session_state.current_doc_number = get_next_document_number(doc_type)
 
