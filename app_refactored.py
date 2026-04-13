@@ -401,9 +401,9 @@ with st.form("billing_form"):
         doc_date = st.date_input("Document Date", value=date.today())
 
         st.subheader("Customer")
-        customer_name = st.text_input("Customer Name", value="Mr. Arun Kumar")
-        contact = st.text_input("Contact Number", value="+91 98765 43210")
-        customer_email = st.text_input("Customer Email", value="arun@example.com")
+        customer_name = st.text_input("Customer Name", value="Mr.Prabu Devan")
+        contact = st.text_input("Contact Number", value="+91 950035 0141")
+        customer_email = st.text_input("Customer Email", value="prabudevan@example.com")
         prepared_by = st.text_input("Prepared By", value="Iniyas Travels")
 
         st.subheader("Trip")
