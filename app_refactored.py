@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
 
@@ -28,6 +28,12 @@ MUTED_TEXT = colors.HexColor("#5B6575")
 
 def format_currency(value: float) -> str:
     return f"Rs. {value:,.2f}"
+
+
+def generate_document_number(doc_type: str) -> str:
+    now = datetime.now()
+    prefix = "QT" if doc_type == "Quotation" else "BILL"
+    return f"{prefix}-{now.strftime('%Y%m%d-%H%M%S')}"
 
 
 def draw_section_title(pdf: canvas.Canvas, x: float, y: float, width: float, title: str) -> float:
@@ -97,7 +103,7 @@ def draw_table_section(
     title_bottom = draw_section_title(pdf, x, y, width, title)
     table = Table(
         data,
-        colWidths=[width * 0.72, width * 0.28],
+        colWidths=[width * 0.12, width * 0.58, width * 0.30],
         rowHeights=[24] + [22] * (len(data) - 1),
     )
     table.setStyle(
@@ -108,8 +114,9 @@ def draw_table_section(
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                 ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
                 ("FONTSIZE", (0, 0), (-1, -1), 9),
-                ("ALIGN", (0, 0), (0, -1), "LEFT"),
-                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+                ("ALIGN", (0, 0), (0, -1), "CENTER"),
+                ("ALIGN", (1, 0), (1, -1), "LEFT"),
+                ("ALIGN", (2, 0), (2, -1), "RIGHT"),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("GRID", (0, 0), (-1, -1), 0.8, LINE_COLOR),
                 ("BACKGROUND", (0, 1), (-1, -2), colors.white),
@@ -136,7 +143,6 @@ def draw_paragraph_section(
     width: float,
     title: str,
     lines: list[str],
-    bullet: bool = False,
 ) -> float:
     styles = getSampleStyleSheet()
     style = styles["BodyText"]
@@ -147,11 +153,7 @@ def draw_paragraph_section(
     style.spaceAfter = 0
 
     title_bottom = draw_section_title(pdf, x, y, width, title)
-    paragraphs = []
-
-    for index, line in enumerate(lines, start=1):
-        prefix = f"{index}. " if bullet else ""
-        paragraphs.append(Paragraph(f"{prefix}{line}", style))
+    paragraphs = [Paragraph(f"{i}. {line}", style) for i, line in enumerate(lines, start=1)]
 
     available_width = width - 16
     paragraph_heights = [paragraph.wrap(available_width, PAGE_HEIGHT)[1] for paragraph in paragraphs]
@@ -215,7 +217,7 @@ def draw_payment_and_signature(
     return min(payment_title_bottom - payment_height, sign_title_bottom - sign_height) - SECTION_GAP
 
 
-def draw_header(pdf: canvas.Canvas, quotation_number: str, quotation_date: date, logo_path: str) -> float:
+def draw_header(pdf: canvas.Canvas, doc_type: str, doc_number: str, doc_date: date, logo_path: str) -> float:
     header_height = 88
     x = LEFT_MARGIN
     y = PAGE_HEIGHT - TOP_MARGIN
@@ -240,16 +242,17 @@ def draw_header(pdf: canvas.Canvas, quotation_number: str, quotation_date: date,
     pdf.drawString(x + 14, y - 54, "Phone: +91 86677 39634")
     pdf.drawString(x + 14, y - 68, "Email: iniyastravels@gmail.com")
 
-    quote_right_edge = logo_box_x - 14
+    right_edge = logo_box_x - 14
 
     pdf.setFont("Helvetica-Bold", 16)
     pdf.setFillColor(ACCENT_COLOR)
-    pdf.drawRightString(quote_right_edge, y - 24, "QUOTATION")
+    pdf.drawRightString(right_edge, y - 24, doc_type.upper())
 
+    label = "Quotation No" if doc_type == "Quotation" else "Bill No"
     pdf.setFont("Helvetica", 9)
     pdf.setFillColor(TEXT_COLOR)
-    pdf.drawRightString(quote_right_edge, y - 42, f"Quotation No: {quotation_number}")
-    pdf.drawRightString(quote_right_edge, y - 56, f"Date: {quotation_date.strftime('%d-%m-%Y')}")
+    pdf.drawRightString(right_edge, y - 42, f"{label}: {doc_number}")
+    pdf.drawRightString(right_edge, y - 56, f"Date: {doc_date.strftime('%d-%m-%Y')}")
 
     logo_file = Path(logo_path).expanduser() if logo_path else None
     if logo_file and logo_file.exists() and logo_file.is_file():
@@ -283,15 +286,16 @@ def draw_header(pdf: canvas.Canvas, quotation_number: str, quotation_date: date,
     return y - header_height - 12
 
 
-def build_quotation_pdf(payload: dict) -> bytes:
+def build_document_pdf(payload: dict) -> bytes:
     buffer = BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=A4)
-    pdf.setTitle(f"Quotation_{payload['quotation_number']}")
+    pdf.setTitle(f"{payload['doc_type']}_{payload['doc_number']}")
 
     current_y = draw_header(
         pdf,
-        payload["quotation_number"],
-        payload["quotation_date"],
+        payload["doc_type"],
+        payload["doc_number"],
+        payload["doc_date"],
         payload["logo_path"],
     )
 
@@ -309,7 +313,7 @@ def build_quotation_pdf(payload: dict) -> bytes:
     current_y = draw_key_value_grid(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, "Trip Details", trip_rows)
 
     current_y = draw_table_section(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, "Charges", payload["charges_table"])
-    current_y = draw_paragraph_section(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, "Terms & Conditions", payload["terms"], bullet=True)
+    current_y = draw_paragraph_section(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, "Terms & Conditions", payload["terms"])
     current_y = draw_payment_and_signature(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, payload["payment_rows"])
 
     footer_y = max(current_y - 4, 18 * mm)
@@ -324,16 +328,22 @@ def build_quotation_pdf(payload: dict) -> bytes:
     return buffer.getvalue()
 
 
-st.set_page_config(page_title="Iniyas Travels Quotation", layout="wide")
-st.title("Iniyas Travels Quotation Generator")
-st.caption("Generate a clean, business-style quotation PDF with structured sections and proper borders.")
+st.set_page_config(page_title="Iniyas Travels Billing", layout="wide")
+st.title("Iniyas Travels Quotation / Bill Generator")
+st.caption("Generate professional quotation and bill PDFs with auto document number and serial-numbered item table.")
 
 default_logo = Path(__file__).with_name("logo.jpeg")
 
-with st.form("quotation_form"):
+with st.form("billing_form"):
     left_col, right_col = st.columns(2)
 
     with left_col:
+        st.subheader("Document")
+        doc_type = st.selectbox("Document Type", ["Quotation", "Bill"])
+        auto_number = generate_document_number(doc_type)
+        doc_number = st.text_input("Document Number", value=auto_number)
+        doc_date = st.date_input("Document Date", value=date.today())
+
         st.subheader("Customer")
         customer_name = st.text_input("Customer Name", value="Mr. Arun Kumar")
         contact = st.text_input("Contact Number", value="+91 98765 43210")
@@ -349,9 +359,7 @@ with st.form("quotation_form"):
         trip_type = st.selectbox("Trip Type", ["Round Trip", "One Way"])
 
     with right_col:
-        st.subheader("Quotation")
-        quotation_number = st.text_input("Quotation Number", value="QT-2026-001")
-        quotation_date = st.date_input("Quotation Date", value=date.today())
+        st.subheader("Branding")
         logo_path = st.text_input("Logo Path", value=str(default_logo) if default_logo.exists() else "")
 
         st.subheader("Charges")
@@ -372,7 +380,7 @@ with st.form("quotation_form"):
         "Terms & Conditions",
         value=(
             "Toll, parking, permit, and interstate taxes are extra unless specifically mentioned.\n"
-            "Driver bata is included only if shown in the quotation.\n"
+            "Driver bata is included only if shown in the document.\n"
             "Any extra usage beyond agreed itinerary will be charged additionally.\n"
             "Advance payment is required to confirm the booking.\n"
             "Rates are subject to change during peak dates if not confirmed in advance."
@@ -380,28 +388,34 @@ with st.form("quotation_form"):
         height=150,
     )
 
-    submitted = st.form_submit_button("Generate Quotation PDF", use_container_width=True)
+    submitted = st.form_submit_button("Generate PDF", use_container_width=True)
 
 if submitted:
     if end_date < start_date:
         st.error("End date cannot be earlier than start date.")
     else:
         duration_days = (end_date - start_date).days + 1
-        total_amount = base_fare + driver_bata + toll_charges + hill_charges + permit_charges
 
-        charge_rows = [
-            ["Description", "Amount"],
-            ["Base Fare", format_currency(base_fare)],
-            ["Driver Bata", format_currency(driver_bata)],
-            ["Toll Charges", format_currency(toll_charges)],
-            ["Hill Charges", format_currency(hill_charges)],
-            ["Permit / Parking Charges", format_currency(permit_charges)],
-            ["Grand Total", format_currency(total_amount)],
+        item_rows = [
+            ("Base Fare", base_fare),
+            ("Driver Bata", driver_bata),
+            ("Toll Charges", toll_charges),
+            ("Hill Charges", hill_charges),
+            ("Permit / Parking Charges", permit_charges),
         ]
 
+        filtered_items = [(desc, amount) for desc, amount in item_rows if amount > 0]
+        total_amount = sum(amount for _, amount in filtered_items)
+
+        charge_rows = [["S.No", "Description", "Amount"]]
+        for index, (desc, amount) in enumerate(filtered_items, start=1):
+            charge_rows.append([str(index), desc, format_currency(amount)])
+        charge_rows.append(["", "Grand Total", format_currency(total_amount)])
+
         payload = {
-            "quotation_number": quotation_number.strip() or "QT-0001",
-            "quotation_date": quotation_date,
+            "doc_type": doc_type,
+            "doc_number": doc_number.strip() or generate_document_number(doc_type),
+            "doc_date": doc_date,
             "logo_path": logo_path.strip(),
             "customer_name": customer_name.strip() or "-",
             "contact": contact.strip() or "-",
@@ -424,13 +438,14 @@ if submitted:
             ],
         }
 
-        pdf_bytes = build_quotation_pdf(payload)
+        pdf_bytes = build_document_pdf(payload)
+        file_prefix = "Quotation" if doc_type == "Quotation" else "Bill"
 
-        st.success("Professional quotation PDF generated successfully.")
+        st.success(f"{doc_type} PDF generated successfully.")
         st.download_button(
-            label="Download Quotation PDF",
+            label=f"Download {doc_type} PDF",
             data=pdf_bytes,
-            file_name=f"Quotation_{payload['quotation_number']}.pdf",
+            file_name=f"{file_prefix}_{payload['doc_number']}.pdf",
             mime="application/pdf",
             use_container_width=True,
         )
