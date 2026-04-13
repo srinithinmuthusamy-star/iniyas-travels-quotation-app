@@ -10,4 +10,3 @@ dependencies = [
   "reportlab==4.4.10",
   "pillow>=12.0.0,<13",
 ]
-
