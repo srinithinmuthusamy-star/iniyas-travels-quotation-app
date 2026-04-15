@@ -306,7 +306,7 @@ def draw_header(pdf: canvas.Canvas, doc_type: str, doc_number: str, doc_date: da
     pdf.setFont("Helvetica", 9)
     pdf.setFillColor(MUTED_TEXT)
     pdf.drawString(x + 14, y - 40, "GN Chetty Road, T. Nagar, Chennai - 600017")
-    pdf.drawString(x + 14, y - 54, "Phone: +91 86677 39634")
+    pdf.drawString(x + 14, y - 54, "Phone: +91 95003 50141")
     pdf.drawString(x + 14, y - 68, "Email: iniyastravels@gmail.com")
 
     right_edge = logo_box_x - 14
@@ -451,9 +451,9 @@ with st.form("billing_form"):
         doc_date = st.date_input("Document Date", value=date.today())
 
         st.subheader("Customer")
-        customer_name = st.text_input("Customer Name", value="Mr. Arun Kumar")
-        contact = st.text_input("Contact Number", value="+91 98765 43210")
-        customer_email = st.text_input("Customer Email", value="arun@example.com")
+        customer_name = st.text_input("Customer Name", value="Mr. Prabu Devan")
+        contact = st.text_input("Contact Number", value="+91 95003 50141")
+        customer_email = st.text_input("Customer Email", value="prabudevan@example.com")
         prepared_by = st.text_input("Prepared By", value="Iniyas Travels")
 
         st.subheader("Trip")
@@ -461,7 +461,7 @@ with st.form("billing_form"):
         drop = st.text_input("Drop Location", value="Kodaikanal")
         start_date = st.date_input("Start Date", value=date.today())
         end_date = st.date_input("End Date", value=date.today())
-        vehicle = st.text_input("Vehicle", value="Toyota Etios")
+        vehicle = st.text_input("Vehicle", value="Shift  Desired")
         trip_type = st.selectbox("Trip Type", ["Round Trip", "One Way"])
 
     with right_col:
@@ -482,7 +482,7 @@ with st.form("billing_form"):
         st.subheader("Payment")
         bank_name = st.text_input("Bank Name", value="State Bank of India")
         account_name = st.text_input("Account Name", value="Iniyas Travels")
-        account_number = st.text_input("Account Number", value="12345678901")
+        account_number = st.text_input("Account Number", value="33020794379")
         ifsc = st.text_input("IFSC Code", value="SBIN0012786")
         upi_id = st.text_input("UPI ID", value="8667739634@upi")
 
