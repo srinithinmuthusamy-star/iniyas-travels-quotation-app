@@ -1,6 +1,7 @@
-from datetime import date, datetime
+from datetime import date
 from io import BytesIO
 from pathlib import Path
+import json
 
 import streamlit as st
 from reportlab.lib import colors
@@ -26,15 +27,43 @@ ACCENT_COLOR = colors.HexColor("#0B6E4F")
 TEXT_COLOR = colors.HexColor("#1B1F23")
 MUTED_TEXT = colors.HexColor("#5B6575")
 
+COUNTER_FILE = Path(__file__).with_name("document_counters.json")
+
 
 def format_currency(value: float) -> str:
     return f"Rs. {value:,.2f}"
 
 
-def generate_document_number(doc_type: str) -> str:
-    now = datetime.now()
-    prefix = "QT" if doc_type == "Quotation" else "BILL"
-    return f"{prefix}-{now.strftime('%Y%m%d-%H%M%S')}"
+def load_counters() -> dict:
+    default_data = {"quotation": 0, "bill": 0}
+    if COUNTER_FILE.exists():
+        try:
+            data = json.loads(COUNTER_FILE.read_text(encoding="utf-8"))
+            return {
+                "quotation": int(data.get("quotation", 0)),
+                "bill": int(data.get("bill", 0)),
+            }
+        except Exception:
+            return default_data
+    return default_data
+
+
+def save_counters(data: dict) -> None:
+    try:
+        COUNTER_FILE.write_text(json.dumps(data), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def get_next_document_number(doc_type: str) -> str:
+    counters = load_counters()
+    if doc_type == "Quotation":
+        counters["quotation"] += 1
+        save_counters(counters)
+        return f"QT-{counters['quotation']:04d}"
+    counters["bill"] += 1
+    save_counters(counters)
+    return f"INV-{counters['bill']:04d}"
 
 
 def draw_section_title(pdf: canvas.Canvas, x: float, y: float, width: float, title: str) -> float:
@@ -377,7 +406,6 @@ def build_document_pdf(payload: dict) -> bytes:
         )
 
     current_y = ensure_space(current_y, payment_section_height + footer_reserve, payload, pdf)
-
     current_y = draw_payment_and_signature(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, payload["payment_rows"])
 
     footer_y = BOTTOM_MARGIN
@@ -394,18 +422,28 @@ def build_document_pdf(payload: dict) -> bytes:
 
 st.set_page_config(page_title="Iniyas Travels Billing", layout="wide")
 st.title("Iniyas Travels Quotation / Bill Generator")
-st.caption("Generate professional quotation and bill PDFs with auto document number and serial-numbered item table.")
+st.caption("Generate professional quotation and bill PDFs with serial document numbering.")
+
+if "doc_type_state" not in st.session_state:
+    st.session_state.doc_type_state = "Quotation"
+
+if "doc_number_state" not in st.session_state:
+    st.session_state.doc_number_state = get_next_document_number("Quotation")
 
 default_logo = Path(__file__).with_name("logo.jpeg")
+
+selected_doc_type = st.selectbox("Document Type", ["Quotation", "Bill"])
+
+if selected_doc_type != st.session_state.doc_type_state:
+    st.session_state.doc_type_state = selected_doc_type
+    st.session_state.doc_number_state = get_next_document_number(selected_doc_type)
 
 with st.form("billing_form"):
     left_col, right_col = st.columns(2)
 
     with left_col:
         st.subheader("Document")
-        doc_type = st.selectbox("Document Type", ["Quotation", "Bill"])
-        auto_number = generate_document_number(doc_type)
-        doc_number = st.text_input("Document Number", value=auto_number)
+        doc_number = st.text_input("Document Number", value=st.session_state.doc_number_state)
         doc_date = st.date_input("Document Date", value=date.today())
 
         st.subheader("Customer")
@@ -442,7 +480,7 @@ with st.form("billing_form"):
     terms_text = st.text_area(
         "Terms & Conditions",
         value=(
-            "Toll, parking, permit, and interstate taxes are extra unless specifically mentioned.\n"
+            "Toll, parking, and interstate taxes are extra unless specifically mentioned.\n"
             "Driver bata is included only if shown in the document.\n"
             "Any extra usage beyond agreed itinerary will be charged additionally.\n"
             "Advance payment is required to confirm the booking.\n"
@@ -475,8 +513,8 @@ if submitted:
         charge_rows.append(["", "Grand Total", format_currency(total_amount)])
 
         payload = {
-            "doc_type": doc_type,
-            "doc_number": doc_number.strip() or generate_document_number(doc_type),
+            "doc_type": selected_doc_type,
+            "doc_number": doc_number.strip() or st.session_state.doc_number_state,
             "doc_date": doc_date,
             "logo_path": logo_path.strip(),
             "customer_name": customer_name.strip() or "-",
@@ -501,14 +539,15 @@ if submitted:
         }
 
         pdf_bytes = build_document_pdf(payload)
-        file_prefix = "Quotation" if doc_type == "Quotation" else "Bill"
+        file_prefix = "Quotation" if selected_doc_type == "Quotation" else "Bill"
 
-        st.success(f"{doc_type} PDF generated successfully.")
+        st.success(f"{selected_doc_type} PDF generated successfully.")
         st.download_button(
-            label=f"Download {doc_type} PDF",
+            label=f"Download {selected_doc_type} PDF",
             data=pdf_bytes,
             file_name=f"{file_prefix}_{payload['doc_number']}.pdf",
             mime="application/pdf",
             use_container_width=True,
         )
 
+        st.session_state.doc_number_state = get_next_document_number(selected_doc_type)
