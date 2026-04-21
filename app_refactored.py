@@ -391,7 +391,8 @@ def build_document_pdf(payload: dict) -> bytes:
     trip_rows = [
         ("Pickup", payload["pickup"], "Drop", payload["drop"]),
         ("Travel Dates", payload["travel_dates"], "Duration", payload["duration_label"]),
-        ("Vehicle", payload["vehicle"], "Trip Type", payload["trip_type"]),
+        ("Vehicle", payload["vehicle"], "Vehicle No", payload["vehicle_number"]),
+        ("Trip Type", payload["trip_type"], "", ""),
     ]
     current_y = ensure_space(current_y, 18 + (24 * len(trip_rows)) + SECTION_GAP, pdf, payload)
     current_y = draw_key_value_grid(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, "Trip Details", trip_rows)
@@ -462,6 +463,7 @@ with st.form("billing_form"):
         start_date = st.date_input("Start Date", value=date.today())
         end_date = st.date_input("End Date", value=date.today())
         vehicle = st.text_input("Vehicle", value="Toyota Etios")
+        vehicle_number = st.text_input("Vehicle Number", value="TN 01 AB 1234")
         trip_type = st.selectbox("Trip Type", ["Round Trip", "One Way", "Airport Drop", "Local Drop"])
 
     with right_col:
@@ -469,10 +471,10 @@ with st.form("billing_form"):
         logo_path = st.text_input("Logo Path", value=str(default_logo) if default_logo.exists() else "")
 
         st.subheader("Charges")
-        base_fare = st.number_input("Base Fare", min_value=0.0, value=00.0, step=100.0)
-        driver_bata = st.number_input("Driver Bata", min_value=0.0, value=00.0, step=100.0)
-        toll_charges = st.number_input("Toll Charges", min_value=0.0, value=00.0, step=100.0)
-        hill_charges = st.number_input("Hill Charges", min_value=0.0, value=00.0, step=100.0)
+        base_fare = st.number_input("Base Fare", min_value=0.0, value=0.0, step=100.0)
+        driver_bata = st.number_input("Driver Bata", min_value=0.0, value=0.0, step=100.0)
+        toll_charges = st.number_input("Toll Charges", min_value=0.0, value=0.0, step=100.0)
+        hill_charges = st.number_input("Hill Charges", min_value=0.0, value=0.0, step=100.0)
         parking_charges = st.number_input("Parking", min_value=0.0, value=0.0, step=100.0)
         state_taxi = st.number_input("State Taxi", min_value=0.0, value=0.0, step=100.0)
         hour_charge = st.number_input("Hour Charge", min_value=0.0, value=0.0, step=100.0)
@@ -542,6 +544,7 @@ if submitted:
             "travel_dates": f"{start_date.strftime('%d-%m-%Y')} to {end_date.strftime('%d-%m-%Y')}",
             "duration_label": f"{duration_days} Day(s)",
             "vehicle": vehicle.strip() or "-",
+            "vehicle_number": vehicle_number.strip() or "-",
             "trip_type": trip_type,
             "charges_table": charge_rows,
             "terms": [line.strip() for line in terms_text.splitlines() if line.strip()],
@@ -568,3 +571,4 @@ if submitted:
         )
 
         st.session_state.current_doc_number = get_next_document_number(doc_type)
+
