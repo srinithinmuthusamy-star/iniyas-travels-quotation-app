@@ -458,12 +458,12 @@ with st.form("billing_form"):
         prepared_by = st.text_input("Prepared By", value="Iniyas Travels")
 
         st.subheader("Trip")
-        pickup = st.text_input("Pickup Location", value="Chennai")
-        drop = st.text_input("Drop Location", value="Kodaikanal")
+        pickup = st.text_input("Pickup Location", value="")
+        drop = st.text_input("Drop Location", value="")
         start_date = st.date_input("Start Date", value=date.today())
         end_date = st.date_input("End Date", value=date.today())
-        vehicle = st.text_input("Vehicle", value="Toyota Etios")
-        vehicle_number = st.text_input("Vehicle Number", value="TN 01 AB 1234")
+        vehicle = st.text_input("Vehicle", value="")
+        vehicle_number = st.text_input("Vehicle Number", value="")
         trip_type = st.selectbox("Trip Type", ["Round Trip", "One Way", "Airport Drop", "Local Drop"])
 
     with right_col:
