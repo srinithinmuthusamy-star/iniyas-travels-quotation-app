@@ -480,8 +480,8 @@ with st.form("billing_form"):
         extra_km = st.number_input("Extra KM", min_value=0.0, value=0.0, step=100.0)
 
         st.subheader("Payment")
-        bank_name = st.text_input("Bank Name", value="State Bank of India")
-        account_name = st.text_input("Account Name", value="Iniyas Travels")
+        bank_name = st.text_input("Bank Name", value="Indian Bank")
+        account_name = st.text_input("Account Name", value="chinnaponnu kandhasamy")
         account_number = st.text_input("Account Number", value="8259913847")
         ifsc = st.text_input("IFSC Code", value="IDIB000G079")
         upi_id = st.text_input("UPI ID", value="magilattu7-1@oksbi")
