@@ -1,7 +1,6 @@
-from datetime import date
+from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
-import json
 
 import streamlit as st
 from reportlab.lib import colors
@@ -17,7 +16,6 @@ PAGE_WIDTH, PAGE_HEIGHT = A4
 LEFT_MARGIN = 18 * mm
 RIGHT_MARGIN = 18 * mm
 TOP_MARGIN = 18 * mm
-BOTTOM_MARGIN = 18 * mm
 CONTENT_WIDTH = PAGE_WIDTH - LEFT_MARGIN - RIGHT_MARGIN
 SECTION_GAP = 8
 
@@ -27,43 +25,15 @@ ACCENT_COLOR = colors.HexColor("#0B6E4F")
 TEXT_COLOR = colors.HexColor("#1B1F23")
 MUTED_TEXT = colors.HexColor("#5B6575")
 
-COUNTER_FILE = Path(__file__).with_name("document_counters.json")
-
 
 def format_currency(value: float) -> str:
     return f"Rs. {value:,.2f}"
 
 
-def load_counters() -> dict:
-    default_data = {"quotation": 0, "bill": 0}
-    if COUNTER_FILE.exists():
-        try:
-            data = json.loads(COUNTER_FILE.read_text(encoding="utf-8"))
-            return {
-                "quotation": int(data.get("quotation", 0)),
-                "bill": int(data.get("bill", 0)),
-            }
-        except Exception:
-            return default_data
-    return default_data
-
-
-def save_counters(data: dict) -> None:
-    try:
-        COUNTER_FILE.write_text(json.dumps(data), encoding="utf-8")
-    except Exception:
-        pass
-
-
-def get_next_document_number(doc_type: str) -> str:
-    counters = load_counters()
-    if doc_type == "Quotation":
-        counters["quotation"] += 1
-        save_counters(counters)
-        return f"QT-{counters['quotation']:04d}"
-    counters["bill"] += 1
-    save_counters(counters)
-    return f"INV-{counters['bill']:04d}"
+def generate_document_number(doc_type: str) -> str:
+    now = datetime.now()
+    prefix = "QT" if doc_type == "Quotation" else "BILL"
+    return f"{prefix}-{now.strftime('%Y%m%d-%H%M%S')}"
 
 
 def draw_section_title(pdf: canvas.Canvas, x: float, y: float, width: float, title: str) -> float:
@@ -212,11 +182,15 @@ def estimate_paragraph_section_height(lines: list[str], width: float) -> float:
     paragraphs = [Paragraph(f"{i}. {line}", style) for i, line in enumerate(lines, start=1)]
     paragraph_heights = [paragraph.wrap(available_width, PAGE_HEIGHT)[1] for paragraph in paragraphs]
     body_height = sum(paragraph_heights) + 16
-    return 18 + body_height + SECTION_GAP
+    title_height = 18
+    return title_height + body_height + SECTION_GAP
 
 
 def estimate_payment_section_height(payment_rows: list[tuple[str, str]]) -> float:
-    return 18 + (24 * len(payment_rows)) + SECTION_GAP
+    title_height = 18
+    row_height = 24
+    body_height = len(payment_rows) * row_height
+    return title_height + body_height + SECTION_GAP
 
 
 def start_new_page(pdf: canvas.Canvas, payload: dict) -> float:
@@ -228,12 +202,6 @@ def start_new_page(pdf: canvas.Canvas, payload: dict) -> float:
         payload["doc_date"],
         payload["logo_path"],
     )
-
-
-def ensure_space(current_y: float, needed_height: float, pdf: canvas.Canvas, payload: dict) -> float:
-    if current_y - needed_height < BOTTOM_MARGIN + 18:
-        return start_new_page(pdf, payload)
-    return current_y
 
 
 def draw_payment_and_signature(
@@ -306,7 +274,7 @@ def draw_header(pdf: canvas.Canvas, doc_type: str, doc_number: str, doc_date: da
     pdf.setFont("Helvetica", 9)
     pdf.setFillColor(MUTED_TEXT)
     pdf.drawString(x + 14, y - 40, "GN Chetty Road, T. Nagar, Chennai - 600017")
-    pdf.drawString(x + 14, y - 54, "Phone: +91 95003 50141")
+    pdf.drawString(x + 14, y - 54, "Phone: +91 86677 39634")
     pdf.drawString(x + 14, y - 68, "Email: iniyastravels@gmail.com")
 
     right_edge = logo_box_x - 14
@@ -315,7 +283,7 @@ def draw_header(pdf: canvas.Canvas, doc_type: str, doc_number: str, doc_date: da
     pdf.setFillColor(ACCENT_COLOR)
     pdf.drawRightString(right_edge, y - 24, doc_type.upper())
 
-    label = "Quotation No" if doc_type == "Quotation" else "Invoice No"
+    label = "Quotation No" if doc_type == "Quotation" else "Bill No"
     pdf.setFont("Helvetica", 9)
     pdf.setFillColor(TEXT_COLOR)
     pdf.drawRightString(right_edge, y - 42, f"{label}: {doc_number}")
@@ -353,21 +321,6 @@ def draw_header(pdf: canvas.Canvas, doc_type: str, doc_number: str, doc_date: da
     return y - header_height - 12
 
 
-def draw_footer(pdf: canvas.Canvas, doc_type: str, total_amount: float) -> None:
-    footer_y = BOTTOM_MARGIN
-    pdf.setStrokeColor(colors.HexColor("#D8DFEA"))
-    pdf.line(LEFT_MARGIN, footer_y + 12, PAGE_WIDTH - RIGHT_MARGIN, footer_y + 12)
-
-    pdf.setFont("Helvetica", 8)
-    pdf.setFillColor(MUTED_TEXT)
-
-    if doc_type == "Bill":
-        pdf.drawString(LEFT_MARGIN, footer_y, f"Total Invoice Value: {format_currency(total_amount)}")
-        pdf.drawRightString(PAGE_WIDTH - RIGHT_MARGIN, footer_y, "This is a computer-generated invoice.")
-    else:
-        pdf.drawString(LEFT_MARGIN, footer_y, "Thank you for choosing Iniyas Travels.")
-
-
 def build_document_pdf(payload: dict) -> bytes:
     buffer = BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=A4)
@@ -385,7 +338,6 @@ def build_document_pdf(payload: dict) -> bytes:
         ("Customer", payload["customer_name"], "Contact", payload["contact"]),
         ("Email", payload["customer_email"], "Prepared By", payload["prepared_by"]),
     ]
-    current_y = ensure_space(current_y, 18 + (24 * len(customer_rows)) + SECTION_GAP, pdf, payload)
     current_y = draw_key_value_grid(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, "Customer Details", customer_rows)
 
     trip_rows = [
@@ -393,19 +345,18 @@ def build_document_pdf(payload: dict) -> bytes:
         ("Travel Dates", payload["travel_dates"], "Duration", payload["duration_label"]),
         ("Vehicle", payload["vehicle"], "Trip Type", payload["trip_type"]),
     ]
-    current_y = ensure_space(current_y, 18 + (24 * len(trip_rows)) + SECTION_GAP, pdf, payload)
     current_y = draw_key_value_grid(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, "Trip Details", trip_rows)
 
-    charge_table_height = 18 + (24 + (22 * max(len(payload["charges_table"]) - 1, 0))) + SECTION_GAP
-    current_y = ensure_space(current_y, charge_table_height, pdf, payload)
     current_y = draw_table_section(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, "Charges", payload["charges_table"])
 
+    footer_reserve = (18 * mm) + 20
     payment_section_height = estimate_payment_section_height(payload["payment_rows"])
-    footer_reserve = BOTTOM_MARGIN + 20
 
     if payload["doc_type"] == "Quotation" and payload["terms"]:
         terms_section_height = estimate_paragraph_section_height(payload["terms"], CONTENT_WIDTH)
-        current_y = ensure_space(current_y, terms_section_height + payment_section_height + footer_reserve, pdf, payload)
+        if current_y - (terms_section_height + payment_section_height + footer_reserve) < TOP_MARGIN:
+            current_y = start_new_page(pdf, payload)
+
         current_y = draw_paragraph_section(
             pdf,
             LEFT_MARGIN,
@@ -415,9 +366,17 @@ def build_document_pdf(payload: dict) -> bytes:
             payload["terms"],
         )
 
-    current_y = ensure_space(current_y, payment_section_height + footer_reserve, pdf, payload)
-    draw_payment_and_signature(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, payload["payment_rows"])
-    draw_footer(pdf, payload["doc_type"], payload["total_amount"])
+    if current_y - (payment_section_height + footer_reserve) < TOP_MARGIN:
+        current_y = start_new_page(pdf, payload)
+
+    current_y = draw_payment_and_signature(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, payload["payment_rows"])
+
+    footer_y = max(current_y - 4, 18 * mm)
+    pdf.setStrokeColor(colors.HexColor("#D8DFEA"))
+    pdf.line(LEFT_MARGIN, footer_y, PAGE_WIDTH - RIGHT_MARGIN, footer_y)
+    pdf.setFont("Helvetica", 8)
+    pdf.setFillColor(MUTED_TEXT)
+    pdf.drawString(LEFT_MARGIN, footer_y - 12, "Thank you for choosing Iniyas Travels.")
 
     pdf.save()
     buffer.seek(0)
@@ -425,35 +384,25 @@ def build_document_pdf(payload: dict) -> bytes:
 
 
 st.set_page_config(page_title="Iniyas Travels Billing", layout="wide")
-st.title("Iniyas Travels Quotation / Invoice Generator")
-st.caption("Generate professional quotation and invoice PDFs with serial numbering.")
+st.title("Iniyas Travels Quotation / Bill Generator")
+st.caption("Generate professional quotation and bill PDFs with auto document number and serial-numbered item table.")
 
 default_logo = Path(__file__).with_name("logo.jpeg")
-
-doc_type = st.selectbox("Document Type", ["Quotation", "Bill"])
-
-if "current_doc_type" not in st.session_state:
-    st.session_state.current_doc_type = doc_type
-
-if "current_doc_number" not in st.session_state:
-    st.session_state.current_doc_number = get_next_document_number(doc_type)
-
-if st.session_state.current_doc_type != doc_type:
-    st.session_state.current_doc_type = doc_type
-    st.session_state.current_doc_number = get_next_document_number(doc_type)
 
 with st.form("billing_form"):
     left_col, right_col = st.columns(2)
 
     with left_col:
         st.subheader("Document")
-        doc_number = st.text_input("Document Number", value=st.session_state.current_doc_number)
+        doc_type = st.selectbox("Document Type", ["Quotation", "Bill"])
+        auto_number = generate_document_number(doc_type)
+        doc_number = st.text_input("Document Number", value=auto_number)
         doc_date = st.date_input("Document Date", value=date.today())
 
         st.subheader("Customer")
-        customer_name = st.text_input("Customer Name", value="Mr. Prabu Devan")
-        contact = st.text_input("Contact Number", value="+91 95003 50141")
-        customer_email = st.text_input("Customer Email", value="prabudevan@example.com")
+        customer_name = st.text_input("Customer Name", value="Mr. Arun Kumar")
+        contact = st.text_input("Contact Number", value="+91 98765 43210")
+        customer_email = st.text_input("Customer Email", value="arun@example.com")
         prepared_by = st.text_input("Prepared By", value="Iniyas Travels")
 
         st.subheader("Trip")
@@ -461,7 +410,7 @@ with st.form("billing_form"):
         drop = st.text_input("Drop Location", value="Kodaikanal")
         start_date = st.date_input("Start Date", value=date.today())
         end_date = st.date_input("End Date", value=date.today())
-        vehicle = st.text_input("Vehicle", value="Shift  Desired")
+        vehicle = st.text_input("Vehicle", value="Toyota Etios")
         trip_type = st.selectbox("Trip Type", ["Round Trip", "One Way"])
 
     with right_col:
@@ -473,33 +422,26 @@ with st.form("billing_form"):
         driver_bata = st.number_input("Driver Bata", min_value=0.0, value=1600.0, step=100.0)
         toll_charges = st.number_input("Toll Charges", min_value=0.0, value=600.0, step=100.0)
         hill_charges = st.number_input("Hill Charges", min_value=0.0, value=1000.0, step=100.0)
-        parking_charges = st.number_input("Parking", min_value=0.0, value=0.0, step=100.0)
-        state_taxi = st.number_input("State Taxi", min_value=0.0, value=0.0, step=100.0)
-        hour_charge = st.number_input("Hour Charge", min_value=0.0, value=0.0, step=100.0)
-        extra_hours = st.number_input("Extra Hours", min_value=0.0, value=0.0, step=100.0)
-        extra_km = st.number_input("Extra KM", min_value=0.0, value=0.0, step=100.0)
+        permit_charges = st.number_input("Permit / Parking Charges", min_value=0.0, value=0.0, step=100.0)
 
         st.subheader("Payment")
         bank_name = st.text_input("Bank Name", value="State Bank of India")
         account_name = st.text_input("Account Name", value="Iniyas Travels")
-        account_number = st.text_input("Account Number", value="33020794379")
+        account_number = st.text_input("Account Number", value="12345678901")
         ifsc = st.text_input("IFSC Code", value="SBIN0012786")
         upi_id = st.text_input("UPI ID", value="8667739634@upi")
 
-    terms = []
-    if doc_type == "Quotation":
-        terms_text = st.text_area(
-            "Terms & Conditions",
-            value=(
-                "Toll, parking, and interstate taxes are extra unless specifically mentioned.\n"
-                "Driver bata is included only if shown in the document.\n"
-                "Any extra usage beyond agreed itinerary will be charged additionally.\n"
-                "Advance payment is required to confirm the booking.\n"
-                "Rates are subject to change during peak dates if not confirmed in advance."
-            ),
-            height=150,
-        )
-        terms = [line.strip() for line in terms_text.splitlines() if line.strip()]
+    terms_text = st.text_area(
+        "Terms & Conditions",
+        value=(
+            "Toll, parking, permit, and interstate taxes are extra unless specifically mentioned.\n"
+            "Driver bata is included only if shown in the document.\n"
+            "Any extra usage beyond agreed itinerary will be charged additionally.\n"
+            "Advance payment is required to confirm the booking.\n"
+            "Rates are subject to change during peak dates if not confirmed in advance."
+        ),
+        height=150,
+    )
 
     submitted = st.form_submit_button("Generate PDF", use_container_width=True)
 
@@ -514,11 +456,7 @@ if submitted:
             ("Driver Bata", driver_bata),
             ("Toll Charges", toll_charges),
             ("Hill Charges", hill_charges),
-            ("Parking", parking_charges),
-            ("State Taxi", state_taxi),
-            ("Hour Charge", hour_charge),
-            ("Extra Hours", extra_hours),
-            ("Extra KM", extra_km),
+            ("Permit / Parking Charges", permit_charges),
         ]
 
         filtered_items = [(desc, amount) for desc, amount in item_rows if amount > 0]
@@ -531,7 +469,7 @@ if submitted:
 
         payload = {
             "doc_type": doc_type,
-            "doc_number": doc_number.strip() or st.session_state.current_doc_number,
+            "doc_number": doc_number.strip() or generate_document_number(doc_type),
             "doc_date": doc_date,
             "logo_path": logo_path.strip(),
             "customer_name": customer_name.strip() or "-",
@@ -545,7 +483,7 @@ if submitted:
             "vehicle": vehicle.strip() or "-",
             "trip_type": trip_type,
             "charges_table": charge_rows,
-            "terms": terms,
+            "terms": [line.strip() for line in terms_text.splitlines() if line.strip()],
             "payment_rows": [
                 ("Bank", bank_name.strip() or "-"),
                 ("Account Name", account_name.strip() or "-"),
@@ -553,11 +491,10 @@ if submitted:
                 ("IFSC", ifsc.strip() or "-"),
                 ("UPI", upi_id.strip() or "-"),
             ],
-            "total_amount": total_amount,
         }
 
         pdf_bytes = build_document_pdf(payload)
-        file_prefix = "Quotation" if doc_type == "Quotation" else "Invoice"
+        file_prefix = "Quotation" if doc_type == "Quotation" else "Bill"
 
         st.success(f"{doc_type} PDF generated successfully.")
         st.download_button(
@@ -567,5 +504,3 @@ if submitted:
             mime="application/pdf",
             use_container_width=True,
         )
-
-        st.session_state.current_doc_number = get_next_document_number(doc_type)
