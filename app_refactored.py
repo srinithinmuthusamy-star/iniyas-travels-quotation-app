@@ -464,7 +464,7 @@ with st.form("billing_form"):
         end_date = st.date_input("End Date", value=date.today())
         vehicle = st.text_input("Vehicle", value="")
         vehicle_number = st.text_input("Vehicle Number", value="")
-        trip_type = st.selectbox("Trip Type", ["Round Trip", "One Way", "Airport Drop", "Local Drop"])
+        trip_type = st.selectbox("Trip Type", ["Round Trip", "One Way", "Airport Drop", "Local Drop","Local Package"])
 
     with right_col:
         st.subheader("Branding")
