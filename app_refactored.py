@@ -214,11 +214,21 @@ def estimate_paragraph_section_height(lines: list[str], width: float) -> float:
     paragraphs = [Paragraph(f"{i}. {line}", style) for i, line in enumerate(lines, start=1)]
     paragraph_heights = [paragraph.wrap(available_width, PAGE_HEIGHT)[1] for paragraph in paragraphs]
     body_height = sum(paragraph_heights) + 16
-    return 18 + body_height + SECTION_GAP
+    title_height = 18
+    return title_height + body_height + SECTION_GAP
 
 
 def estimate_payment_section_height(payment_rows: list[tuple[str, str]]) -> float:
-    return 18 + (24 * len(payment_rows)) + SECTION_GAP
+    title_height = 18
+    row_height = 24
+    body_height = len(payment_rows) * row_height
+    return title_height + body_height + SECTION_GAP
+
+
+def ensure_space(current_y: float, required_height: float, payload: dict, pdf: canvas.Canvas) -> float:
+    if current_y - required_height < BOTTOM_MARGIN + 18:
+        return start_new_page(pdf, payload)
+    return current_y
 
 
 def start_new_page(pdf: canvas.Canvas, payload: dict) -> float:
@@ -230,12 +240,6 @@ def start_new_page(pdf: canvas.Canvas, payload: dict) -> float:
         payload["doc_date"],
         payload["logo_path"],
     )
-
-
-def ensure_space(current_y: float, needed_height: float, pdf: canvas.Canvas, payload: dict) -> float:
-    if current_y - needed_height < BOTTOM_MARGIN + 18:
-        return start_new_page(pdf, payload)
-    return current_y
 
 
 def draw_payment_and_signature(
@@ -308,7 +312,7 @@ def draw_header(pdf: canvas.Canvas, doc_type: str, doc_number: str, doc_date: da
     pdf.setFont("Helvetica", 9)
     pdf.setFillColor(MUTED_TEXT)
     pdf.drawString(x + 14, y - 40, "GN Chetty Road, T. Nagar, Chennai - 600017")
-    pdf.drawString(x + 14, y - 54, "Phone: +91 95003 50141")
+    pdf.drawString(x + 14, y - 54, "Phone: +91 86677 39634")
     pdf.drawString(x + 14, y - 68, "Email: iniyastravels@gmail.com")
 
     right_edge = logo_box_x - 14
@@ -387,7 +391,7 @@ def build_document_pdf(payload: dict) -> bytes:
         ("Customer", payload["customer_name"], "Contact", payload["contact"]),
         ("Email", payload["customer_email"], "Prepared By", payload["prepared_by"]),
     ]
-    current_y = ensure_space(current_y, 18 + (24 * len(customer_rows)) + SECTION_GAP, pdf, payload)
+    current_y = ensure_space(current_y, 18 + (24 * len(customer_rows)) + SECTION_GAP, payload, pdf)
     current_y = draw_key_value_grid(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, "Customer Details", customer_rows)
 
     trip_rows = [
@@ -399,11 +403,11 @@ def build_document_pdf(payload: dict) -> bytes:
         ("Starting KM", payload["starting_km"], "Closing KM", payload["closing_km"]),
         ("Total Hours", payload["total_hours"], "Total KM", payload["total_km"]),
     ]
-    current_y = ensure_space(current_y, 18 + (24 * len(trip_rows)) + SECTION_GAP, pdf, payload)
+    current_y = ensure_space(current_y, 18 + (24 * len(trip_rows)) + SECTION_GAP, payload, pdf)
     current_y = draw_key_value_grid(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, "Trip Details", trip_rows)
 
     charge_table_height = 18 + (24 + (22 * max(len(payload["charges_table"]) - 1, 0))) + SECTION_GAP
-    current_y = ensure_space(current_y, charge_table_height, pdf, payload)
+    current_y = ensure_space(current_y, charge_table_height, payload, pdf)
     current_y = draw_table_section(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, "Charges", payload["charges_table"])
 
     payment_section_height = estimate_payment_section_height(payload["payment_rows"])
@@ -411,7 +415,7 @@ def build_document_pdf(payload: dict) -> bytes:
 
     if payload["doc_type"] == "Quotation" and payload["terms"]:
         terms_section_height = estimate_paragraph_section_height(payload["terms"], CONTENT_WIDTH)
-        current_y = ensure_space(current_y, terms_section_height + payment_section_height + footer_reserve, pdf, payload)
+        current_y = ensure_space(current_y, terms_section_height + payment_section_height + footer_reserve, payload, pdf)
         current_y = draw_paragraph_section(
             pdf,
             LEFT_MARGIN,
@@ -421,7 +425,7 @@ def build_document_pdf(payload: dict) -> bytes:
             payload["terms"],
         )
 
-    current_y = ensure_space(current_y, payment_section_height + footer_reserve, pdf, payload)
+    current_y = ensure_space(current_y, payment_section_height + footer_reserve, payload, pdf)
     draw_payment_and_signature(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, payload["payment_rows"])
     draw_footer(pdf, payload["doc_type"], payload["total_amount"])
 
@@ -590,5 +594,4 @@ if submitted:
         )
 
         st.session_state.current_doc_number = get_next_document_number(doc_type)
-
 
