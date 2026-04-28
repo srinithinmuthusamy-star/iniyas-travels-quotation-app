@@ -27,7 +27,11 @@ ACCENT_COLOR = colors.HexColor("#0B6E4F")
 TEXT_COLOR = colors.HexColor("#1B1F23")
 MUTED_TEXT = colors.HexColor("#5B6575")
 
-COUNTER_FILE = Path(__file__).with_name("document_counters.json")
+BASE_DIR = Path(__file__).resolve().parent
+COUNTER_FILE = BASE_DIR / "document_counters.json"
+ASSETS_DIR = BASE_DIR / "assets"
+DEFAULT_LOGO = ASSETS_DIR / "logo.jpeg"
+DEFAULT_SIGNATURE = ASSETS_DIR / "signature.jpeg"
 
 
 def format_currency(value: float) -> str:
@@ -61,6 +65,7 @@ def get_next_document_number(doc_type: str) -> str:
         counters["quotation"] += 1
         save_counters(counters)
         return f"QT-{counters['quotation']:04d}"
+
     counters["invoice"] += 1
     save_counters(counters)
     return f"INV-{counters['invoice']:04d}"
@@ -92,7 +97,7 @@ def draw_key_value_grid(
     rows: list[tuple[str, str, str, str]],
 ) -> float:
     title_bottom = draw_section_title(pdf, x, y, width, title)
-    row_height = 24
+    row_height = 28
     body_height = len(rows) * row_height
     draw_box(pdf, x, title_bottom, width, body_height)
 
@@ -107,19 +112,19 @@ def draw_key_value_grid(
     pdf.line(x + half_width, title_bottom, x + half_width, title_bottom - body_height)
 
     for index, (left_label, left_value, right_label, right_value) in enumerate(rows):
-        text_y = title_bottom - (index * row_height) - 16
+        text_y = title_bottom - (index * row_height) - 17
 
         pdf.setFillColor(MUTED_TEXT)
-        pdf.setFont("Helvetica-Bold", 9)
+        pdf.setFont("Helvetica-Bold", 8.8)
         pdf.drawString(x + 10, text_y, left_label)
         if right_label:
             pdf.drawString(x + half_width + 10, text_y, right_label)
 
         pdf.setFillColor(TEXT_COLOR)
-        pdf.setFont("Helvetica", 9)
-        pdf.drawString(x + 78, text_y, left_value)
+        pdf.setFont("Helvetica", 8.8)
+        pdf.drawString(x + 88, text_y, left_value)
         if right_value:
-            pdf.drawString(x + half_width + 78, text_y, right_value)
+            pdf.drawString(x + half_width + 88, text_y, right_value)
 
     return title_bottom - body_height - SECTION_GAP
 
@@ -232,8 +237,8 @@ def start_new_page(pdf: canvas.Canvas, payload: dict) -> float:
     )
 
 
-def ensure_space(current_y: float, needed_height: float, pdf: canvas.Canvas, payload: dict) -> float:
-    if current_y - needed_height < BOTTOM_MARGIN + 18:
+def ensure_space(current_y: float, required_height: float, payload: dict, pdf: canvas.Canvas) -> float:
+    if current_y - required_height < BOTTOM_MARGIN + 18:
         return start_new_page(pdf, payload)
     return current_y
 
@@ -284,14 +289,13 @@ def draw_payment_and_signature(
             img_width, img_height = signature.getSize()
 
             max_width = right_width - 30
-            max_height = sign_height - 40
+            max_height = sign_height - 42
             scale = min(max_width / img_width, max_height / img_height)
 
             draw_width = img_width * scale
             draw_height = img_height * scale
-
             draw_x = sign_x + (right_width - draw_width) / 2
-            draw_y = sign_title_bottom - sign_height + 28
+            draw_y = sign_title_bottom - sign_height + 24
 
             pdf.drawImage(
                 signature,
@@ -342,7 +346,7 @@ def draw_header(pdf: canvas.Canvas, doc_type: str, doc_number: str, doc_date: da
     pdf.setFont("Helvetica", 9)
     pdf.setFillColor(MUTED_TEXT)
     pdf.drawString(x + 14, y - 40, "GN Chetty Road, T. Nagar, Chennai - 600017")
-    pdf.drawString(x + 14, y - 54, "Phone: +91 86677 39634")
+    pdf.drawString(x + 14, y - 54, "Phone: +91 95003 50141")
     pdf.drawString(x + 14, y - 68, "Email: iniyastravels@gmail.com")
 
     right_edge = logo_box_x - 14
@@ -362,15 +366,13 @@ def draw_header(pdf: canvas.Canvas, doc_type: str, doc_number: str, doc_date: da
         try:
             logo = ImageReader(str(logo_file))
             img_width, img_height = logo.getSize()
-
             padding = 4
             max_width = logo_box_width - (padding * 2)
             max_height = logo_box_height - (padding * 2)
-
             scale = min(max_width / img_width, max_height / img_height)
+
             draw_width = img_width * scale
             draw_height = img_height * scale
-
             draw_x = logo_box_x + (logo_box_width - draw_width) / 2
             draw_y = logo_box_y + (logo_box_height - draw_height) / 2
 
@@ -421,7 +423,7 @@ def build_document_pdf(payload: dict) -> bytes:
         ("Customer", payload["customer_name"], "Contact", payload["contact"]),
         ("Email", payload["customer_email"], "Prepared By", payload["prepared_by"]),
     ]
-    current_y = ensure_space(current_y, 18 + (24 * len(customer_rows)) + SECTION_GAP, payload, pdf)
+    current_y = ensure_space(current_y, 18 + (28 * len(customer_rows)) + SECTION_GAP, payload, pdf)
     current_y = draw_key_value_grid(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, "Customer Details", customer_rows)
 
     trip_rows = [
@@ -433,7 +435,7 @@ def build_document_pdf(payload: dict) -> bytes:
         ("Starting KM", payload["starting_km"], "Closing KM", payload["closing_km"]),
         ("Total Hours", payload["total_hours"], "Total KM", payload["total_km"]),
     ]
-    current_y = ensure_space(current_y, 18 + (24 * len(trip_rows)) + SECTION_GAP, payload, pdf)
+    current_y = ensure_space(current_y, 18 + (28 * len(trip_rows)) + SECTION_GAP, payload, pdf)
     current_y = draw_key_value_grid(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, "Trip Details", trip_rows)
 
     charge_table_height = 18 + (24 + (22 * max(len(payload["charges_table"]) - 1, 0))) + SECTION_GAP
@@ -445,7 +447,12 @@ def build_document_pdf(payload: dict) -> bytes:
 
     if payload["doc_type"] == "Quotation" and payload["terms"]:
         terms_section_height = estimate_paragraph_section_height(payload["terms"], CONTENT_WIDTH)
-        current_y = ensure_space(current_y, terms_section_height + payment_section_height + footer_reserve, payload, pdf)
+        current_y = ensure_space(
+            current_y,
+            terms_section_height + payment_section_height + footer_reserve,
+            payload,
+            pdf,
+        )
         current_y = draw_paragraph_section(
             pdf,
             LEFT_MARGIN,
@@ -474,9 +481,6 @@ def build_document_pdf(payload: dict) -> bytes:
 st.set_page_config(page_title="Iniyas Travels Billing", layout="wide")
 st.title("Iniyas Travels Quotation / Invoice Generator")
 st.caption("Generate professional quotation and invoice PDFs with serial document numbers.")
-
-default_logo = Path(__file__).with_name("logo.jpeg")
-default_signature = r"C:\Users\nithi\Downloads\WhatsApp Image 2026-04-28 at 7.39.07 AM.jpeg"
 
 doc_type = st.selectbox("Document Type", ["Quotation", "Invoice"])
 
@@ -511,7 +515,10 @@ with st.form("billing_form"):
         end_date = st.date_input("End Date", value=date.today())
         vehicle = st.text_input("Vehicle", value="")
         vehicle_number = st.text_input("Vehicle Number", value="")
-        trip_type = st.selectbox("Trip Type", ["Round Trip", "One Way", "Airport Drop", "Local Drop", "Local Package"])
+        trip_type = st.selectbox(
+            "Trip Type",
+            ["Round Trip", "One Way", "Airport Drop", "Local Drop", "Local Package"],
+        )
         starting_time = st.text_input("Starting Time", value="")
         closing_time = st.text_input("Closing Time", value="")
         total_hours = st.text_input("Total Hours", value="")
@@ -522,8 +529,10 @@ with st.form("billing_form"):
 
     with right_col:
         st.subheader("Branding")
-        logo_path = st.text_input("Logo Path", value=str(default_logo) if default_logo.exists() else "")
-        signature_path = st.text_input("Signature Image Path", value=default_signature)
+        logo_default_value = str(DEFAULT_LOGO) if DEFAULT_LOGO.exists() else ""
+        signature_default_value = str(DEFAULT_SIGNATURE) if DEFAULT_SIGNATURE.exists() else ""
+        logo_path = st.text_input("Logo Path", value=logo_default_value)
+        signature_path = st.text_input("Signature Image Path", value=signature_default_value)
 
         st.subheader("Charges")
         base_fare = st.number_input("Base Fare", min_value=0.0, value=0.0, step=100.0)
@@ -634,4 +643,3 @@ if submitted:
         )
 
         st.session_state.current_doc_number = get_next_document_number(doc_type)
-
