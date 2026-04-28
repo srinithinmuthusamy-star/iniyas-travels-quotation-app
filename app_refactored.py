@@ -112,12 +112,14 @@ def draw_key_value_grid(
         pdf.setFillColor(MUTED_TEXT)
         pdf.setFont("Helvetica-Bold", 9)
         pdf.drawString(x + 10, text_y, left_label)
-        pdf.drawString(x + half_width + 10, text_y, right_label)
+        if right_label:
+            pdf.drawString(x + half_width + 10, text_y, right_label)
 
         pdf.setFillColor(TEXT_COLOR)
         pdf.setFont("Helvetica", 9)
         pdf.drawString(x + 78, text_y, left_value)
-        pdf.drawString(x + half_width + 78, text_y, right_value)
+        if right_value:
+            pdf.drawString(x + half_width + 78, text_y, right_value)
 
     return title_bottom - body_height - SECTION_GAP
 
@@ -279,7 +281,7 @@ def draw_payment_and_signature(
     pdf.line(sign_x + 18, line_y, sign_x + right_width - 18, line_y)
     pdf.setFillColor(MUTED_TEXT)
     pdf.setFont("Helvetica", 9)
-    pdf.drawCentredString(sign_x + (right_width / 2), line_y - 16, "For Iniyas Travels")
+    pdf.drawCentredString(sign_x + (right_width / 2), line_y - 16, "Authorized Signature")
 
     return min(payment_title_bottom - payment_height, sign_title_bottom - sign_height) - SECTION_GAP
 
@@ -392,7 +394,10 @@ def build_document_pdf(payload: dict) -> bytes:
         ("Pickup", payload["pickup"], "Drop", payload["drop"]),
         ("Travel Dates", payload["travel_dates"], "Duration", payload["duration_label"]),
         ("Vehicle", payload["vehicle"], "Vehicle No", payload["vehicle_number"]),
-        ("Trip Type", payload["trip_type"], "", ""),
+        ("Trip Type", payload["trip_type"], "Driver Name", payload["driver_name"]),
+        ("Starting Time", payload["starting_time"], "Closing Time", payload["closing_time"]),
+        ("Starting KM", payload["starting_km"], "Closing KM", payload["closing_km"]),
+        ("Total Hours", payload["total_hours"], "Total KM", payload["total_km"]),
     ]
     current_y = ensure_space(current_y, 18 + (24 * len(trip_rows)) + SECTION_GAP, pdf, payload)
     current_y = draw_key_value_grid(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, "Trip Details", trip_rows)
@@ -464,7 +469,14 @@ with st.form("billing_form"):
         end_date = st.date_input("End Date", value=date.today())
         vehicle = st.text_input("Vehicle", value="")
         vehicle_number = st.text_input("Vehicle Number", value="")
-        trip_type = st.selectbox("Trip Type", ["Round Trip", "One Way", "Airport Drop", "Local Drop","Local Package"])
+        trip_type = st.selectbox("Trip Type", ["Round Trip", "One Way", "Airport Drop", "Local Drop", "Local Package"])
+        starting_time = st.text_input("Starting Time", value="")
+        closing_time = st.text_input("Closing Time", value="")
+        total_hours = st.text_input("Total Hours", value="")
+        starting_km = st.text_input("Starting KM", value="")
+        closing_km = st.text_input("Closing KM", value="")
+        total_km = st.text_input("Total KM", value="")
+        driver_name = st.text_input("Driver Name", value="")
 
     with right_col:
         st.subheader("Branding")
@@ -546,6 +558,13 @@ if submitted:
             "vehicle": vehicle.strip() or "-",
             "vehicle_number": vehicle_number.strip() or "-",
             "trip_type": trip_type,
+            "starting_time": starting_time.strip() or "-",
+            "closing_time": closing_time.strip() or "-",
+            "total_hours": total_hours.strip() or "-",
+            "starting_km": starting_km.strip() or "-",
+            "closing_km": closing_km.strip() or "-",
+            "total_km": total_km.strip() or "-",
+            "driver_name": driver_name.strip() or "-",
             "charges_table": charge_rows,
             "terms": [line.strip() for line in terms_text.splitlines() if line.strip()],
             "total_amount": total_amount,
@@ -571,4 +590,5 @@ if submitted:
         )
 
         st.session_state.current_doc_number = get_next_document_number(doc_type)
+
 
