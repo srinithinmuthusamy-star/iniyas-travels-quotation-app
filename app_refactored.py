@@ -505,7 +505,7 @@ with st.form("billing_form"):
         st.subheader("Customer")
         customer_name = st.text_input("Customer Name", value="Mr. Prabu Devan")
         contact = st.text_input("Contact Number", value="+91 95003 50141")
-        customer_email = st.text_input("Customer Email", value="prabu@example.com")
+        customer_email = st.text_input("Customer Email", value="iniyastravels@gmail.com")
         prepared_by = st.text_input("Prepared By", value="Iniyas Travels")
 
         st.subheader("Trip")
