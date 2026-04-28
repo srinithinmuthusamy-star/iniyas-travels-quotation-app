@@ -214,21 +214,11 @@ def estimate_paragraph_section_height(lines: list[str], width: float) -> float:
     paragraphs = [Paragraph(f"{i}. {line}", style) for i, line in enumerate(lines, start=1)]
     paragraph_heights = [paragraph.wrap(available_width, PAGE_HEIGHT)[1] for paragraph in paragraphs]
     body_height = sum(paragraph_heights) + 16
-    title_height = 18
-    return title_height + body_height + SECTION_GAP
+    return 18 + body_height + SECTION_GAP
 
 
 def estimate_payment_section_height(payment_rows: list[tuple[str, str]]) -> float:
-    title_height = 18
-    row_height = 24
-    body_height = len(payment_rows) * row_height
-    return title_height + body_height + SECTION_GAP
-
-
-def ensure_space(current_y: float, required_height: float, payload: dict, pdf: canvas.Canvas) -> float:
-    if current_y - required_height < BOTTOM_MARGIN + 18:
-        return start_new_page(pdf, payload)
-    return current_y
+    return 18 + (24 * len(payment_rows)) + SECTION_GAP
 
 
 def start_new_page(pdf: canvas.Canvas, payload: dict) -> float:
@@ -242,12 +232,19 @@ def start_new_page(pdf: canvas.Canvas, payload: dict) -> float:
     )
 
 
+def ensure_space(current_y: float, needed_height: float, pdf: canvas.Canvas, payload: dict) -> float:
+    if current_y - needed_height < BOTTOM_MARGIN + 18:
+        return start_new_page(pdf, payload)
+    return current_y
+
+
 def draw_payment_and_signature(
     pdf: canvas.Canvas,
     x: float,
     y: float,
     width: float,
     payment_rows: list[tuple[str, str]],
+    signature_path: str,
 ) -> float:
     left_width = width * 0.58
     right_width = width - left_width - 12
@@ -280,12 +277,45 @@ def draw_payment_and_signature(
     sign_height = payment_height
     draw_box(pdf, sign_x, sign_title_bottom, right_width, sign_height)
 
-    line_y = sign_title_bottom - sign_height + 34
-    pdf.setStrokeColor(LINE_COLOR)
-    pdf.line(sign_x + 18, line_y, sign_x + right_width - 18, line_y)
-    pdf.setFillColor(MUTED_TEXT)
-    pdf.setFont("Helvetica", 9)
-    pdf.drawCentredString(sign_x + (right_width / 2), line_y - 16, "Authorized Signature")
+    signature_file = Path(signature_path).expanduser() if signature_path else None
+    if signature_file and signature_file.exists() and signature_file.is_file():
+        try:
+            signature = ImageReader(str(signature_file))
+            img_width, img_height = signature.getSize()
+
+            max_width = right_width - 30
+            max_height = sign_height - 40
+            scale = min(max_width / img_width, max_height / img_height)
+
+            draw_width = img_width * scale
+            draw_height = img_height * scale
+
+            draw_x = sign_x + (right_width - draw_width) / 2
+            draw_y = sign_title_bottom - sign_height + 28
+
+            pdf.drawImage(
+                signature,
+                draw_x,
+                draw_y,
+                width=draw_width,
+                height=draw_height,
+                preserveAspectRatio=True,
+                mask="auto",
+            )
+        except Exception:
+            line_y = sign_title_bottom - sign_height + 34
+            pdf.setStrokeColor(LINE_COLOR)
+            pdf.line(sign_x + 18, line_y, sign_x + right_width - 18, line_y)
+            pdf.setFillColor(MUTED_TEXT)
+            pdf.setFont("Helvetica", 9)
+            pdf.drawCentredString(sign_x + (right_width / 2), line_y - 16, "Authorized Signature")
+    else:
+        line_y = sign_title_bottom - sign_height + 34
+        pdf.setStrokeColor(LINE_COLOR)
+        pdf.line(sign_x + 18, line_y, sign_x + right_width - 18, line_y)
+        pdf.setFillColor(MUTED_TEXT)
+        pdf.setFont("Helvetica", 9)
+        pdf.drawCentredString(sign_x + (right_width / 2), line_y - 16, "Authorized Signature")
 
     return min(payment_title_bottom - payment_height, sign_title_bottom - sign_height) - SECTION_GAP
 
@@ -426,7 +456,14 @@ def build_document_pdf(payload: dict) -> bytes:
         )
 
     current_y = ensure_space(current_y, payment_section_height + footer_reserve, payload, pdf)
-    draw_payment_and_signature(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, payload["payment_rows"])
+    draw_payment_and_signature(
+        pdf,
+        LEFT_MARGIN,
+        current_y,
+        CONTENT_WIDTH,
+        payload["payment_rows"],
+        payload["signature_path"],
+    )
     draw_footer(pdf, payload["doc_type"], payload["total_amount"])
 
     pdf.save()
@@ -439,6 +476,7 @@ st.title("Iniyas Travels Quotation / Invoice Generator")
 st.caption("Generate professional quotation and invoice PDFs with serial document numbers.")
 
 default_logo = Path(__file__).with_name("logo.jpeg")
+default_signature = r"C:\Users\nithi\Downloads\WhatsApp Image 2026-04-28 at 7.39.07 AM.jpeg"
 
 doc_type = st.selectbox("Document Type", ["Quotation", "Invoice"])
 
@@ -485,6 +523,7 @@ with st.form("billing_form"):
     with right_col:
         st.subheader("Branding")
         logo_path = st.text_input("Logo Path", value=str(default_logo) if default_logo.exists() else "")
+        signature_path = st.text_input("Signature Image Path", value=default_signature)
 
         st.subheader("Charges")
         base_fare = st.number_input("Base Fare", min_value=0.0, value=0.0, step=100.0)
@@ -551,6 +590,7 @@ if submitted:
             "doc_number": doc_number.strip() or st.session_state.current_doc_number,
             "doc_date": doc_date,
             "logo_path": logo_path.strip(),
+            "signature_path": signature_path.strip(),
             "customer_name": customer_name.strip() or "-",
             "contact": contact.strip() or "-",
             "customer_email": customer_email.strip() or "-",
