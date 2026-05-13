@@ -445,7 +445,12 @@ def build_document_pdf(payload: dict) -> bytes:
             ("Pickup", payload["pickup"], "Drop", payload["drop"]),
             ("Travel Dates", payload["travel_dates"], "Duration", payload["duration_label"]),
             ("Vehicle", payload["vehicle"], "Vehicle No", payload["vehicle_number"]),
-            ("Trip Type", payload["trip_type"], "Driver Name", payload["driver_name"]),
+            (
+                "Trip Type",
+                payload["trip_type"],
+                "Driver Name" if payload["driver_name"] else "",
+                payload["driver_name"],
+            ),
             ("Starting Time", payload["starting_time"], "Closing Time", payload["closing_time"]),
             ("Starting KM", payload["starting_km"], "Closing KM", payload["closing_km"]),
             ("Total Hours", payload["total_hours"], "Total KM", payload["total_km"]),
