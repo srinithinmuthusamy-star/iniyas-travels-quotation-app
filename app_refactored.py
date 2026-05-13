@@ -38,6 +38,20 @@ def format_currency(value: float) -> str:
     return f"Rs. {value:,.2f}"
 
 
+def clean_optional_text(value: str) -> str:
+    return value.strip()
+
+
+def keep_non_empty_rows(rows: list[tuple[str, str, str, str]]) -> list[tuple[str, str, str, str]]:
+    filtered_rows = []
+    for left_label, left_value, right_label, right_value in rows:
+        left_has_value = bool(left_value.strip())
+        right_has_value = bool(right_value.strip())
+        if left_has_value or right_has_value:
+            filtered_rows.append((left_label, left_value, right_label, right_value))
+    return filtered_rows
+
+
 def load_counters() -> dict:
     default_data = {"quotation": 0, "invoice": 0}
     if COUNTER_FILE.exists():
@@ -426,15 +440,17 @@ def build_document_pdf(payload: dict) -> bytes:
     current_y = ensure_space(current_y, 18 + (28 * len(customer_rows)) + SECTION_GAP, payload, pdf)
     current_y = draw_key_value_grid(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, "Customer Details", customer_rows)
 
-    trip_rows = [
-        ("Pickup", payload["pickup"], "Drop", payload["drop"]),
-        ("Travel Dates", payload["travel_dates"], "Duration", payload["duration_label"]),
-        ("Vehicle", payload["vehicle"], "Vehicle No", payload["vehicle_number"]),
-        ("Trip Type", payload["trip_type"], "Driver Name", payload["driver_name"]),
-        ("Starting Time", payload["starting_time"], "Closing Time", payload["closing_time"]),
-        ("Starting KM", payload["starting_km"], "Closing KM", payload["closing_km"]),
-        ("Total Hours", payload["total_hours"], "Total KM", payload["total_km"]),
-    ]
+    trip_rows = keep_non_empty_rows(
+        [
+            ("Pickup", payload["pickup"], "Drop", payload["drop"]),
+            ("Travel Dates", payload["travel_dates"], "Duration", payload["duration_label"]),
+            ("Vehicle", payload["vehicle"], "Vehicle No", payload["vehicle_number"]),
+            ("Trip Type", payload["trip_type"], "Driver Name", payload["driver_name"]),
+            ("Starting Time", payload["starting_time"], "Closing Time", payload["closing_time"]),
+            ("Starting KM", payload["starting_km"], "Closing KM", payload["closing_km"]),
+            ("Total Hours", payload["total_hours"], "Total KM", payload["total_km"]),
+        ]
+    )
     current_y = ensure_space(current_y, 18 + (28 * len(trip_rows)) + SECTION_GAP, payload, pdf)
     current_y = draw_key_value_grid(pdf, LEFT_MARGIN, current_y, CONTENT_WIDTH, "Trip Details", trip_rows)
 
@@ -604,20 +620,20 @@ if submitted:
             "contact": contact.strip() or "-",
             "customer_email": customer_email.strip() or "-",
             "prepared_by": prepared_by.strip() or "Iniyas Travels",
-            "pickup": pickup.strip() or "-",
-            "drop": drop.strip() or "-",
+            "pickup": clean_optional_text(pickup),
+            "drop": clean_optional_text(drop),
             "travel_dates": f"{start_date.strftime('%d-%m-%Y')} to {end_date.strftime('%d-%m-%Y')}",
             "duration_label": f"{duration_days} Day(s)",
-            "vehicle": vehicle.strip() or "-",
-            "vehicle_number": vehicle_number.strip() or "-",
+            "vehicle": clean_optional_text(vehicle),
+            "vehicle_number": clean_optional_text(vehicle_number),
             "trip_type": trip_type,
-            "starting_time": starting_time.strip() or "-",
-            "closing_time": closing_time.strip() or "-",
-            "total_hours": total_hours.strip() or "-",
-            "starting_km": starting_km.strip() or "-",
-            "closing_km": closing_km.strip() or "-",
-            "total_km": total_km.strip() or "-",
-            "driver_name": driver_name.strip() or "-",
+            "starting_time": clean_optional_text(starting_time),
+            "closing_time": clean_optional_text(closing_time),
+            "total_hours": clean_optional_text(total_hours),
+            "starting_km": clean_optional_text(starting_km),
+            "closing_km": clean_optional_text(closing_km),
+            "total_km": clean_optional_text(total_km),
+            "driver_name": clean_optional_text(driver_name),
             "charges_table": charge_rows,
             "terms": [line.strip() for line in terms_text.splitlines() if line.strip()],
             "total_amount": total_amount,
