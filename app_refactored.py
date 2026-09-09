@@ -12,7 +12,6 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 from reportlab.platypus import Paragraph, Table, TableStyle
 
-
 PAGE_WIDTH, PAGE_HEIGHT = A4
 LEFT_MARGIN = 18 * mm
 RIGHT_MARGIN = 18 * mm
@@ -74,15 +73,25 @@ def save_counters(data: dict) -> None:
 
 
 def get_next_document_number(doc_type: str) -> str:
+    """Actually consumes a number: increments the counter and persists it.
+    Call this ONLY when a document is really being generated."""
     counters = load_counters()
     if doc_type == "Quotation":
         counters["quotation"] += 1
         save_counters(counters)
         return f"QT-{counters['quotation']:04d}"
-
     counters["invoice"] += 1
     save_counters(counters)
     return f"INV-{counters['invoice']:04d}"
+
+
+def peek_next_document_number(doc_type: str) -> str:
+    """Read-only preview of what the next number WOULD be, without
+    incrementing or saving anything. Safe to call on every page render."""
+    counters = load_counters()
+    if doc_type == "Quotation":
+        return f"QT-{counters['quotation'] + 1:04d}"
+    return f"INV-{counters['invoice'] + 1:04d}"
 
 
 def draw_section_title(pdf: canvas.Canvas, x: float, y: float, width: float, title: str) -> float:
@@ -118,22 +127,18 @@ def draw_key_value_grid(
     half_width = width / 2
     pdf.setStrokeColor(colors.HexColor("#D8DFEA"))
     pdf.setLineWidth(0.6)
-
     for index in range(1, len(rows)):
         row_y = title_bottom - index * row_height
         pdf.line(x, row_y, x + width, row_y)
-
     pdf.line(x + half_width, title_bottom, x + half_width, title_bottom - body_height)
 
     for index, (left_label, left_value, right_label, right_value) in enumerate(rows):
         text_y = title_bottom - (index * row_height) - 17
-
         pdf.setFillColor(MUTED_TEXT)
         pdf.setFont("Helvetica-Bold", 8.8)
         pdf.drawString(x + 10, text_y, left_label)
         if right_label:
             pdf.drawString(x + half_width + 10, text_y, right_label)
-
         pdf.setFillColor(TEXT_COLOR)
         pdf.setFont("Helvetica", 8.8)
         pdf.drawString(x + 88, text_y, left_value)
@@ -180,7 +185,6 @@ def draw_table_section(
             ]
         )
     )
-
     _, table_height = table.wrap(width, 0)
     draw_box(pdf, x, title_bottom, width, table_height)
     table.drawOn(pdf, x, title_bottom - table_height)
@@ -205,11 +209,9 @@ def draw_paragraph_section(
 
     title_bottom = draw_section_title(pdf, x, y, width, title)
     paragraphs = [Paragraph(f"{i}. {line}", style) for i, line in enumerate(lines, start=1)]
-
     available_width = width - 16
     paragraph_heights = [paragraph.wrap(available_width, PAGE_HEIGHT)[1] for paragraph in paragraphs]
     body_height = sum(paragraph_heights) + 16
-
     draw_box(pdf, x, title_bottom, width, body_height)
 
     current_y = title_bottom - 10
@@ -277,7 +279,6 @@ def draw_payment_and_signature(
     pdf.setLineWidth(0.6)
     label_col = left_width * 0.34
     pdf.line(x + label_col, payment_title_bottom, x + label_col, payment_title_bottom - payment_height)
-
     for index in range(1, len(payment_rows)):
         row_y = payment_title_bottom - index * row_height
         pdf.line(x, row_y, x + left_width, row_y)
@@ -301,16 +302,13 @@ def draw_payment_and_signature(
         try:
             signature = ImageReader(str(signature_file))
             img_width, img_height = signature.getSize()
-
             max_width = right_width - 30
             max_height = sign_height - 42
             scale = min(max_width / img_width, max_height / img_height)
-
             draw_width = img_width * scale
             draw_height = img_height * scale
             draw_x = sign_x + (right_width - draw_width) / 2
             draw_y = sign_title_bottom - sign_height + 24
-
             pdf.drawImage(
                 signature,
                 draw_x,
@@ -356,7 +354,6 @@ def draw_header(pdf: canvas.Canvas, doc_type: str, doc_number: str, doc_date: da
     pdf.setFillColor(TEXT_COLOR)
     pdf.setFont("Helvetica-Bold", 18)
     pdf.drawString(x + 14, y - 24, "INIYAS TRAVELS")
-
     pdf.setFont("Helvetica", 9)
     pdf.setFillColor(MUTED_TEXT)
     pdf.drawString(x + 14, y - 40, "GN Chetty Road, T. Nagar, Chennai - 600017")
@@ -364,7 +361,6 @@ def draw_header(pdf: canvas.Canvas, doc_type: str, doc_number: str, doc_date: da
     pdf.drawString(x + 14, y - 68, "Email: iniyastravels@gmail.com")
 
     right_edge = logo_box_x - 14
-
     pdf.setFont("Helvetica-Bold", 16)
     pdf.setFillColor(ACCENT_COLOR)
     pdf.drawRightString(right_edge, y - 24, doc_type.upper())
@@ -384,12 +380,10 @@ def draw_header(pdf: canvas.Canvas, doc_type: str, doc_number: str, doc_date: da
             max_width = logo_box_width - (padding * 2)
             max_height = logo_box_height - (padding * 2)
             scale = min(max_width / img_width, max_height / img_height)
-
             draw_width = img_width * scale
             draw_height = img_height * scale
             draw_x = logo_box_x + (logo_box_width - draw_width) / 2
             draw_y = logo_box_y + (logo_box_height - draw_height) / 2
-
             pdf.drawImage(
                 logo,
                 draw_x,
@@ -409,10 +403,8 @@ def draw_footer(pdf: canvas.Canvas, doc_type: str, total_amount: float) -> None:
     footer_y = BOTTOM_MARGIN
     pdf.setStrokeColor(colors.HexColor("#D8DFEA"))
     pdf.line(LEFT_MARGIN, footer_y + 12, PAGE_WIDTH - RIGHT_MARGIN, footer_y + 12)
-
     pdf.setFont("Helvetica", 8)
     pdf.setFillColor(MUTED_TEXT)
-
     if doc_type == "Invoice":
         pdf.drawString(LEFT_MARGIN, footer_y, f"Total Invoice Value: {format_currency(total_amount)}")
         pdf.drawRightString(PAGE_WIDTH - RIGHT_MARGIN, footer_y, "This is a computer-generated invoice.")
@@ -492,6 +484,7 @@ def build_document_pdf(payload: dict) -> bytes:
         payload["payment_rows"],
         payload["signature_path"],
     )
+
     draw_footer(pdf, payload["doc_type"], payload["total_amount"])
 
     pdf.save()
@@ -507,13 +500,12 @@ doc_type = st.selectbox("Document Type", ["Quotation", "Invoice"])
 
 if "current_doc_type" not in st.session_state:
     st.session_state.current_doc_type = doc_type
-
 if "current_doc_number" not in st.session_state:
-    st.session_state.current_doc_number = get_next_document_number(doc_type)
+    st.session_state.current_doc_number = peek_next_document_number(doc_type)
 
 if st.session_state.current_doc_type != doc_type:
     st.session_state.current_doc_type = doc_type
-    st.session_state.current_doc_number = get_next_document_number(doc_type)
+    st.session_state.current_doc_number = peek_next_document_number(doc_type)
 
 with st.form("billing_form"):
     left_col, right_col = st.columns(2)
@@ -573,19 +565,19 @@ with st.form("billing_form"):
         ifsc = st.text_input("IFSC Code", value="IDIB000G079")
         upi_id = st.text_input("UPI ID", value="magilattu7-1@oksbi")
 
-    terms_text = ""
-    if doc_type == "Quotation":
-        terms_text = st.text_area(
-            "Terms & Conditions",
-            value=(
-                "Toll, parking, and interstate taxes are extra unless specifically mentioned.\n"
-                "Driver bata is included only if shown in the document.\n"
-                "Any extra usage beyond agreed itinerary will be charged additionally.\n"
-                "Advance payment is required to confirm the booking.\n"
-                "Rates are subject to change during peak dates if not confirmed in advance."
-            ),
-            height=150,
-        )
+        terms_text = ""
+        if doc_type == "Quotation":
+            terms_text = st.text_area(
+                "Terms & Conditions",
+                value=(
+                    "Toll, parking, and interstate taxes are extra unless specifically mentioned.\n"
+                    "Driver bata is included only if shown in the document.\n"
+                    "Any extra usage beyond agreed itinerary will be charged additionally.\n"
+                    "Advance payment is required to confirm the booking.\n"
+                    "Rates are subject to change during peak dates if not confirmed in advance."
+                ),
+                height=150,
+            )
 
     submitted = st.form_submit_button("Generate PDF", use_container_width=True)
 
@@ -606,7 +598,6 @@ if submitted:
             ("Extra Hours", extra_hours),
             ("Extra KM", extra_km),
         ]
-
         filtered_items = [(desc, amount) for desc, amount in item_rows if amount > 0]
         total_amount = sum(amount for _, amount in filtered_items)
 
@@ -615,9 +606,12 @@ if submitted:
             charge_rows.append([str(index), desc, format_currency(amount)])
         charge_rows.append(["", "Grand Total", format_currency(total_amount)])
 
+        # Actually consume + persist a document number NOW, at generation time only.
+        consumed_doc_number = get_next_document_number(doc_type)
+
         payload = {
             "doc_type": doc_type,
-            "doc_number": doc_number.strip() or st.session_state.current_doc_number,
+            "doc_number": doc_number.strip() or consumed_doc_number,
             "doc_date": doc_date,
             "logo_path": logo_path.strip(),
             "signature_path": signature_path.strip(),
@@ -663,4 +657,4 @@ if submitted:
             use_container_width=True,
         )
 
-        st.session_state.current_doc_number = get_next_document_number(doc_type)
+        st.session_state.current_doc_number = peek_next_document_number(doc_type)
