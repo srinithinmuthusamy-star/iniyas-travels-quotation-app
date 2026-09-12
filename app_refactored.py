@@ -3,6 +3,7 @@ from io import BytesIO
 from pathlib import Path
 import json
 
+import requests
 import streamlit as st
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -32,6 +33,12 @@ ASSETS_DIR = BASE_DIR / "assets"
 DEFAULT_LOGO = ASSETS_DIR / "logo.jpeg"
 DEFAULT_SIGNATURE = ASSETS_DIR / "signature.jpeg"
 
+JSONBIN_URL = f"https://api.jsonbin.io/v3/b/{st.secrets['JSONBIN_BIN_ID']}"
+JSONBIN_HEADERS = {
+    "X-Master-Key": st.secrets["JSONBIN_API_KEY"],
+    "Content-Type": "application/json",
+}
+
 
 def format_currency(value: float) -> str:
     return f"Rs. {value:,.2f}"
@@ -53,21 +60,21 @@ def keep_non_empty_rows(rows: list[tuple[str, str, str, str]]) -> list[tuple[str
 
 def load_counters() -> dict:
     default_data = {"quotation": 0, "invoice": 0}
-    if COUNTER_FILE.exists():
-        try:
-            data = json.loads(COUNTER_FILE.read_text(encoding="utf-8"))
-            return {
-                "quotation": int(data.get("quotation", 0)),
-                "invoice": int(data.get("invoice", 0)),
-            }
-        except Exception:
-            return default_data
-    return default_data
+    try:
+        response = requests.get(f"{JSONBIN_URL}/latest", headers=JSONBIN_HEADERS, timeout=10)
+        response.raise_for_status()
+        data = response.json()["record"]
+        return {
+            "quotation": int(data.get("quotation", 0)),
+            "invoice": int(data.get("invoice", 0)),
+        }
+    except Exception:
+        return default_data
 
 
 def save_counters(data: dict) -> None:
     try:
-        COUNTER_FILE.write_text(json.dumps(data), encoding="utf-8")
+        requests.put(JSONBIN_URL, headers=JSONBIN_HEADERS, json=data, timeout=10)
     except Exception:
         pass
 
